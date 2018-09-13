@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Grind Player</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+
+	<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.0.3/socket.io.js"></script>
+    <script type="text/javascript">
+		var socket = io('http://13.115.28.202:8002');
+    </script>
+	<style>
+		object{
+		    transform: scale(1.6);
+		}
+	</style>
+</head>
+<body>
+
+	<input id='agay' />
+
+	<button onclick='c()'>small</button>
+	<button onclick='c2()'>big</button>
+	<button onclick='erase()'>erase</button>
+	<script>
+		function c(){
+				socket.emit('t',{ 'o':true,'m':document.getElementById('agay').value });
+		}
+		function c2(){
+				socket.emit('t',{ 'o':false,'m':document.getElementById('agay').value });
+		}
+		function erase(){
+			socket.emit('t',{ 'o':false,'m':document.getElementById('agay').value,e:true });
+		}
+	</script>
+</body>
+</html>

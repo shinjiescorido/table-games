@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Grind Player</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <script type="text/javascript" src="http://yandex.st/swfobject/2.2/swfobject.min.js"></script>
+    <style type="text/css">
+        * {
+            overflow: hidden;
+        }
+    </style>
+    <script type="text/javascript">
+        var flashvars = {
+            src: 'rtmp://54.249.59.163:1935/TestTranscoder/video',
+            bufferTime : 0
+        };
+        var params = {
+            allowFullScreen: true
+            , allowScriptAccess: "always"
+            , bgcolor: "#000000"
+        };
+        var attrs = {
+            name: "player"
+        };
+
+        swfobject.embedSWF("/js/GrindPlayer.swf", "player", "1080", "600", "10.2", null, flashvars, params, attrs);
+    </script>
+</head>
+<body>
+    <div id="player"></div>
+</body>
+</html>
+

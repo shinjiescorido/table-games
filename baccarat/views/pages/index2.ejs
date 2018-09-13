@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Grind Player</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+
+	<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.0.3/socket.io.js"></script>
+    <script type="text/javascript">
+		var socket = io('http://13.115.28.202:8000');
+		//var socket = io('http://127.0.0.1:9002');
+		//var socket = io('<%= rtmp %>');
+		//io = socket.connect();
+    </script>
+	<style>
+		object{
+		    transform: scale(1.6);
+		}
+	</style>
+</head>
+<body>
+<%= rtmp %>
+	m:<input id='agay' />
+	tid:<input id='n' />
+	
+	<button onclick='c()'>small</button>
+	<button onclick='c2()'>big</button>
+	<button onclick='erase()'>erase</button>
+	<script>
+		function c(){
+				socket.emit('t',{ 'o':true,'m':document.getElementById('agay').value,'t':document.getElementById('n').value });
+		}
+		function c2(){
+				socket.emit('t',{ 'o':false,'m':document.getElementById('agay').value,'t':document.getElementById('n').value });
+		}
+		function erase(){
+			socket.emit('t',{ 'o':false,'m':document.getElementById('agay').value,e:true,'t':document.getElementById('n').value });
+		}
+	</script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+{
+  "name": "game_servers",
+  "version": "1.0.0",
+  "description": "",
+  "main": "game1.js",
+  "dependencies": {
+    "buffer": "^5.1.0",
+    "colors": "^1.1.2",
+    "crypto-js": "^3.1.8",
+    "deep-extend": "^0.5.1",
+    "dotenv": "^4.0.0",
+    "ejs": "^2.6.1",
+    "express": "^4.16.3",
+    "lodash": "^4.17.10",
+    "lz-string": "^1.4.4",
+    "mocha": "^3.4.2",
+    "moment": "^2.22.2",
+    "mysql": "^2.16.0",
+    "node-env-file": "^0.1.8",
+    "request": "^2.87.0",
+    "request-promise": "^4.2.1",
+    "retry-as-promised": "^3.0.0",
+    "should": "^11.2.1",
+    "socket.io": "^1.7.3",
+    "socket.io-client": "^2.1.1",
+    "socket.io-redis": "^4.0.0",
+    "utils": "^0.3.1",
+    "uuid": "^3.3.2",
+    "uuid-v4": "^0.1.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC"
+}

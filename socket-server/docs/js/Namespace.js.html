@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: Namespace.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: Namespace.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>const _ = require('lodash');
+const config = require('../config');
+const Redis = require('ioredis');
+const XPacket = require('./XPacket');
+
+/**
+ * @desc This module connects game to front-end
+ *
+ * @author Joseph Dan Alinsug &lt;josephdanalinsug@hotmail.com>
+ * @version 1.0
+ *
+ * @param {Object} io socket socket io instance for current namespace
+ * @param {String} namespace current namespace
+ * @param {boolean} disableRooms enable/disable room feature
+ * @param {Object} managerSocket Manager's socket io connection
+ * @returns {*}
+ * @constructor
+ */
+let Namespace = function (io, namespace, disableRooms, managerSocket) {
+    let ns = {
+        // socket io connection
+        io: io || null,
+        // rooms currently instantiated
+        rooms: [],
+        // dictionary of all users currently connected to a room and their indexes for easy access
+        dictionary: {},
+        // max number of seats per room
+        seats: 7,
+        // socket io namespace
+        namespace,
+        // manager namespace socket connection
+        managerSocket,
+        // subscriber
+        sub: new Redis({
+            port: config.redisPort,
+            host: config.redisHost
+        }),
+        // publisher
+        pub: new Redis({
+            port: config.redisPort,
+            host: config.redisHost
+        }),
+
+        /**
+         * Register event listeners
+         *
+         * @desc Attach event listeners when a user connects to the socket server.
+         * @memberof Namespace
+         */
+        registerListeners () {
+            if (!disableRooms) {
+                console.log(`Listener registered: PID > ${process.pid} | Namespace ${this.namespace}`);
+                this.sub.subscribe(namespace, () => {
+                    this.sub.on('message', (channel, message) => {
+                        message = JSON.parse(message);
+                        if (message.event == 'room') {
+                            this.pushToAvailableRoom(message.data.socket, message.data.range);
+                        }
+
+                        if (message.event == 'disconnect') {
+                            this.removeFromRoom(message.data.socket, message.data.range);
+                        }
+
+                        if (message.event == 'bet') {
+                            this.updateBettingStates(message.data.socket, message.data.bet, 'bet');
+                        }
+
+                        if (message.event == 'cancel') {
+                            this.updateBettingStates(message.data.socket, message.data.bet, 'cancel');
+                        }
+
+                        if (message.event == 'clear') {
+                            this.resetBettingStates();
+                        }
+
+                        this.emitRoomDataToManagers();
+                    });
+                });
+            }
+
+            this.io.on('connection', (socket) => {
+                socket.emit('ping', process.pid);
+                this.emitRoomDataToManagers();
+                if (!disableRooms) {
+                    // on initialization push the user to an available room
+                    socket.on('data', (message) => {
+                        if (message.eventName == 'room') {
+                            this.removeFromRoom(socket.id);
+                            let data = this.pushToAvailableRoom(socket.id, message.data.range);
+                            this.publish(namespace, {event: 'room', data});
+                            socket.adapter.remoteJoin(socket.id, data.room);
+
+                            process.send({
+                                eventName: 'pong',
+                                data: {
+                                    id: message.data.id,
+                                    namespace
+                                }
+                            });
+
+                            return;
+                        }
+
+                        if (message.eventName == 'bet') {
+                            this.updateBettingStates(socket.id, message.data.bet, 'bet');
+                            this.publish(namespace, {event: 'bet', data: {
+                                socket: socket.id,
+                                bet: message.data.bet
+                            }});
+                            return;
+                        }
+
+                        if (message.eventName == 'bet') {
+                            this.updateBettingStates(socket.id, message.data.bet, 'cancel');
+                            this.publish(namespace, {event: 'cancel', data: {
+                                socket: socket.id
+                            }});
+
+                            return ;
+                        }
+
+                        if (message.eventName == 'clear') {
+                            this.resetBettingStates();
+                            this.publish(namespace, {event: 'clear'});
+                        }
+                    });
+
+                    // remove from room if user disconnects
+                    socket.on('disconnect', () => {
+                        this.removeFromRoom(socket.id);
+                        this.publish(namespace, {
+                            event: 'disconnect',
+                            data: {socket: socket.id}
+                        });
+                    });
+                }
+            });
+        },
+
+        /**
+         * @method createRoom
+         *
+         * @desc In the event that no rooms are available, we will instantiate one
+         * for the connecting users.
+         *
+         * @memberof Namespace
+         * @param {String} range betting range
+         * @param {number} index optional index to be pushed
+         * @returns {number}
+         */
+        createRoom (range, index) {
+            let data = {
+                range,
+                users: new Array(this.seats)
+            };
+
+            if (index === undefined) {
+                index = this.rooms.push(data) - 1;
+            }
+            else {
+                this.rooms[index] = data;
+            }
+
+            return index;
+        },
+
+        /**
+         * @method pushToAvailableRoom
+         *
+         * @desc As soon as a user connects to a namespace `table/range`, he/she will be automatically to a room.
+         * Assign user to a room and seat.
+         *
+         * @param {String} socket socket id of current connection
+         * @param {String} range betting range
+         * @memberof Namespace
+         */
+        pushToAvailableRoom (socket, range) {
+            // add user to logical representation of room and dictionary for easy access
+            let room = this.findAvailableRoom(range);
+            let seat = this.findAvailableSeat(this.rooms[room].users);
+            let user = {room, seat, bets: 0, range, remove: false, socket: socket};
+            this.dictionary[socket] = user;
+            this.rooms[room].users[seat] = socket;
+            // join user to room
+            return user;
+        },
+
+        /**
+         * @method findAvailableRoom
+         *
+         * @desc Return table index with available seat
+         * This method will lookup the rooms property for a table with seats open and returns the
+         * index of the table.
+         *
+         * @param {String} range betting range
+         * @memberof Namespace
+         * @returns {number}
+         */
+        findAvailableRoom (range) {
+            let room = _.findIndex(this.rooms, (element) => {
+                return this.seats - this.emptySeatCount(element) != this.seats &amp;&amp; element.range == range;
+            });
+
+            // create a room if there is none available
+            if (room === -1) {
+                room = this.createRoom(range);
+            }
+
+            return room;
+        },
+
+        /**
+         * @method findAvailableSeat
+         *
+         * @desc Return available seat index
+         * This method returns the index of a seat that is 'false', which means that the seat is unoccupied,
+         * and returns its index.
+         *
+         * @param {Array} room room with available seat
+         * @memberof Namespace
+         * @returns {number}
+         */
+        findAvailableSeat (room) {
+            return _.findIndex(room, (seat) => {
+                return !seat
+            });
+        },
+
+        /**
+         * @method removeFromRoom
+         *
+         * @desc Remove user information on disconnect
+         * Clear out user socket id from dictionary and room property whenever he/she gets disconnected.
+         *
+         * @param {*} id dictionary identifier
+         * @memberof Namespace
+         */
+        removeFromRoom (id) {
+            let user = this.dictionary[id];
+            if (user === undefined) {
+                return;
+            }
+
+            if (this.dictionary[id].bets) {
+                this.dictionary[id].remove = true;
+                return ;
+            }
+
+            delete this.dictionary[id];
+            this.rooms[user['room']].users[user['seat']] = undefined;
+            this.pub.publish('socket-connections', {event: 'disconnect', data: {socket: id}});
+            this.sweep();
+            this.emitRoomDataToManagers();
+        },
+
+        /**
+         *
+         * @desc Count empty seats
+         * Return empty seat count for a given room
+         *
+         * @param {*} room selected room
+         * @memberof Namespace
+         * @returns {number}
+         */
+        emptySeatCount (room) {
+            return !room ? 0 : _.size(_.filter(room.users, (seat) => { return !seat }));
+        },
+
+        /**
+         * @method sweep
+         *
+         * @desc Remove empty rooms
+         * Checks if the end of the rooms property is empty and removes it, we should not delete rooms
+         * in the middle of the array since it would entail more work of adjusting the dictionary, gaps
+         * in the middle will always be filled first.
+         *
+         * @memberof Namespace
+         */
+        sweep () {
+            let empty = this.emptySeatCount(this.rooms[this.rooms.length -1]) == this.seats;
+            if (this.rooms[this.rooms.length -1] &amp;&amp; empty) {
+                this.rooms.splice(this.rooms.length -1);
+                this.sweep();
+            }
+        },
+
+        /**
+         * @method emitRoomDataToManagers
+         *
+         * @desc Emit to managers page channel
+         * Pass data to managers socket io channel through passed socket io instance
+         *
+         * @memberof Namespace
+         */
+        emitRoomDataToManagers () {
+            let roomData = {
+                eventName: 'room',
+                data: {}
+            };
+
+            if (!this.managerSocket) {
+                return ;
+            }
+
+            roomData.data['totalBets'] = _.sum(_.map(this.dictionary, 'bets'));
+            roomData.data['totalUsers'] = _.size(this.dictionary);
+            roomData.data['totalBettingUsers'] = _.size(_.filter(this.dictionary, 'bets'));
+            roomData.data['namespace'] = this.namespace;
+            this.managerSocket.emit('data', XPacket.send(roomData));
+        },
+
+        /**
+         * @method updateBettingStates
+         *
+         * @desc Update properties holding values
+         *
+         * @param {*} id dictionary identifier
+         * @param {number} bet bet amount for current round
+         * @param {string} type action type 'bet' or 'cancel'
+         * @memberof Namespaces
+         */
+        updateBettingStates (id, bet, type) {
+            if (!this.dictionary[id]) {
+                return ;
+            }
+
+            this.dictionary[id].isBetting = type == 'bet';
+            this.dictionary[id].bets = (type == 'bet' ? 1 : 0) * (isNaN(parseInt(bet)) ? 0 : parseInt(bet));
+        },
+
+        /**
+         * @method resetBettingStates
+         *
+         * @desc Reset values
+         * Reset bet and winning values in the dictionary, this happens when the game enters a new round
+         *
+         * @memberof Namespace
+         */
+        resetBettingStates () {
+            let keys = _.keys(this.dictionary);
+
+            _.forEach(keys, (key) => {
+                this.dictionary[key].winning = this.dictionary[key].bets = 0;
+                if (this.dictionary[key].remove) {
+                    this.removeFromRoom(key);
+                }
+            });
+
+            this.sweep();
+        },
+
+        /**
+         * @method emitter
+         *
+         * @desc Emit data to clients.
+         * Pass on data to clients currently connected to namespace
+         *
+         * @param {*} data data to be emmited to client socket listeners
+         * @memberof Namespace
+         */
+        emitter (data) {
+            var sendingData = _.pickBy(data, (v, k) => {
+                return k !== "gameName";
+            });
+
+            if (data.eventName &amp;&amp; data.eventName.toLowerCase() == 'newround') {
+                this.resetBettingStates();
+            }
+
+            if (data) {
+                // send game data and events to users
+                this.io.emit('push', XPacket.send(sendingData));
+                // send game data to managers page
+                this.managerSocket.emit('data', XPacket.send(sendingData));
+            }
+        },
+
+        /**
+         * @method publish
+         *
+         * @desc Emit to redis publisher client
+         *
+         * @param {String} event event name
+         * @param {Object} data data to be passed
+         * @memberof Namespace
+         */
+        publish (event, data) {
+            data.processId = process.pid;
+            this.pub.publish(event, JSON.stringify(data))
+        }
+    };
+
+    ns.registerListeners();
+
+    return ns;
+};
+
+module.exports = Namespace;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="Namespace.html">Namespace</a></li><li><a href="TCPServer.html">TCPServer</a></li><li><a href="Worker.html">Worker</a></li></ul><h3>Namespaces</h3><ul><li><a href="ClusterManager.html">ClusterManager</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Thu Jun 29 2017 14:56:53 GMT+0900 (Korea Standard Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

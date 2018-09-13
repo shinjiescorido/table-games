@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Grind Player</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <script type="text/javascript" src="http://yandex.st/swfobject/2.2/swfobject.min.js"></script>
+ 
+    <script type="text/javascript">
+        var flashvars = {
+            src: '<%= rtmp %>',
+            bufferTime : 0
+        };
+        var params = {
+            allowFullScreen: true
+            , allowScriptAccess: "always"
+            , bgcolor: "#000000"
+        };
+        var attrs = {
+            name: "player"
+        };
+
+        swfobject.embedSWF("/js/GrindPlayer.swf", "player", "700", "401", "10.2", null, flashvars, params, attrs);
+    </script>
+	<style>
+		object{
+		    transform: scale(1.6,1.6);
+			display:table;
+			margin:auto;
+			padding-top: 60px;
+		}
+		#player:{
+			display:table;
+			margin:auto;
+		}
+	</style>
+</head>
+<body>
+    <div id="player"></div>
+</body>
+</html>

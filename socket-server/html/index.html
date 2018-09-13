@@ -1,0 +1,22 @@
+<html>
+    <head>
+        <script type="text/javascript" src="/socket.io/socket.io.js"></script>
+        <script type="text/javascript" src="/xpack.bundle.js"></script>
+    </head>
+    <body>
+        <pre id="test">
+
+        </pre>
+        <script type="text/javascript">
+            let socket = io.connect('http://10.1.10.179:8000/all', { 'transports': ['websocket']});
+
+            socket.on('connect', function () {
+                socket.emit('data', {eventName: 'init', userId: 1});
+                socket.on('data', function (message) {
+                    console.log(Xpacket.received(message));
+                    document.getElementById('test').innerHTML = JSON.stringify(Xpacket.received(message), null, 2);
+                });
+            })
+        </script>
+    </body>
+</html>
